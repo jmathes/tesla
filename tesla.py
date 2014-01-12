@@ -197,7 +197,9 @@ class Car(object):
     def door_lock(self):
         return self._cmd('door_lock')
 
-    def set_temps(self, driver_temp, passenger_temp):
+    def set_temps(self, driver_temp, passenger_temp=None):
+        if passenger_temp is None:
+            passenger_temp = driver_temp
         if self.gui_settings['gui_temperature_units'] == 'F':
             driver_temp = F2C(driver_temp)
             passenger_temp = F2C(passenger_temp)
