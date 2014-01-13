@@ -75,7 +75,6 @@ class Account(urllib2.BaseHandler):
                 return response
             except urllib2.HTTPError, e:
                 time.sleep(0.5)
-        print url
         raise e
 
     def _json(self, cmd, data=None):
@@ -91,38 +90,60 @@ class Account(urllib2.BaseHandler):
 
 
 class Car(object):
-    AVAILABLE_QUERIES = [
-        'mobile_enabled',
-        'charge_state',
-        'climate_state',
-        'drive_state',
-        'gui_settings',
-        'vehicle_state',
-    ]
     def __init__(self, account, data):
         self._account = account
         data[u'option_codes'] = data[u'option_codes'].split(u',')
-        self.general = data
         self.id = data['id']
         self.vin = data['vin']
-        self._attr_metadata = {}
-        for query in self.AVAILABLE_QUERIES:
-            self._attr_metadata[query] = {
-                'last_update': 0,
-                'expiry': 30,
-            }
-            self.__dict__[query] = None
+        self.car_state = {
+            'general' : {
+                'last' : data,
+                'timestamp' : time.time(),
+                'expiry' : None,
+            },
+            'mobile_enabled' : {
+                'last' : None,
+                'timestamp' : 0,
+                'expiry' : 5,
+            },
+            'drive_state' : {
+                'last' : None,
+                'timestamp' : 0,
+                'expiry' : 5,
+            },
+            'climate_state' : {
+                'last' : None,
+                'timestamp' : 0,
+                'expiry' : 20,
+            },
+            'gui_settings' : {
+                'last' : None,
+                'timestamp' : 0,
+                'expiry' : 20,
+            },
+            'charge_state' : {
+                'last' : None,
+                'timestamp' : 0,
+                'expiry' : 20,
+            },
+            'vehicle_state' : {
+                'last' : None,
+                'timestamp' : 0,
+                'expiry' : 20,
+            },
+        }
+        self._last_awake_update = time.time()
 
-    def diagnostic(self, refresh=True):
-        diagnostic = {}
-        try:
-            for query in self.AVAILABLE_QUERIES:
-                if refresh:
-                    self.refresh(query)
-                diagnostic[query] = self.__getattribute__(query)
-            return diagnostic
-        except ShhhError:
-            return self.general
+    def run_query(self, query):
+        print query
+        state = self.car_state[query]
+        if time.time() - state['timestamp'] < state['expiry'] and self.awake:
+            url = "/vehicles/%s/" % self.id
+            url += "command/" if query != "mobile_enabled" else ""
+            url += query
+            state['last'] = self._json(url)
+            state['timestamp'] = time.time()
+        return state['last']
 
     def refresh(self, query):
         assert query in self.AVAILABLE_QUERIES
@@ -138,24 +159,21 @@ class Car(object):
 
     def __getattribute__(self, attr):
         if (False
-                or attr == 'AVAILABLE_QUERIES'
-                or attr not in self.AVAILABLE_QUERIES):
+                or attr == 'car_state'
+                or attr not in self.car_state
+                or not self.car_state[attr]['expiry']):
             return super(Car, self).__getattribute__(attr)
         now = time.time()
-        metadata = self._attr_metadata[attr]
-        if now - metadata['last_update'] > metadata['expiry']:
-            path = "vehicles/%s/" % self.id
-            if attr != 'mobile_enabled':
-                path += "command/"
-            self.__dict__[attr] = self._json(path + attr)
-            if attr == 'climate_state' and self.gui_settings['gui_temperature_units'] == 'F':
-                self.__dict__[attr][u'driver_temp_setting'] = C2F(self.__dict__[attr][u'driver_temp_setting'])
-                self.__dict__[attr][u'passenger_temp_setting'] = C2F(self.__dict__[attr][u'passenger_temp_setting'])
-            metadata['last_update'] = now
-        return super(Car, self).__getattribute__(attr)
+        state = self.car_state[attr]
+        if time.time() - state['timestamp'] > state['expiry']:
+            url = "/vehicles/%s/" % self.id
+            url += "command/" if attr != "mobile_enabled" else ""
+            url += attr
+            state['last'] = self._json(url)
+            state['timestamp'] = time.time()
+        return state['last']
 
     def locate(self):
-        self.refresh('drive_state')
         return (self.drive_state['longitude'], self.drive_state['latitude'])
 
     def _json(self, url, **kwargs):
@@ -167,22 +185,23 @@ class Car(object):
     def _cmd(self, cmd, **kwargs):
         url = "/vehicles/%s/command/%s" % (self.id, cmd)
         return self._json(cmd, **kwargs)
-        # if kwargs:
-        #     url += "?" + urllib.urlencode(kwargs)
-        # result = self._communicate(url)
-        # if not result['result']:
-        #     raise CommandFailure(result['reason'])
 
-
+    @property
+    def awake(self):
+        return not self.asleep
 
     @property
     def asleep(self):
-        car_data_list = self._account._json('vehicles')
-        for data in car_data_list:
-            if data['vin'] == self.vin and data['id'] == self.id:
-                self.general['state'] = data['state']
-                break
-        return self.general['state'] == 'asleep'
+        expiry = 1
+        if self.car_state['general']['last']['state'] == 'asleep':
+            expiry = 10
+        if time.time() - self._last_awake_update > expiry:
+            car_data_list = self._account._json('vehicles')
+            for data in car_data_list:
+                if data['vin'] == self.vin and data['id'] == self.id:
+                    self.car_state['general']['state'] = data['state']
+                    break
+        return self.car_state['general']['last']['state'] == 'asleep'
 
     def wake_up(self):
         start = time.time()
@@ -244,6 +263,7 @@ class Car(object):
         return self._cmd('sun_roof_control', state=state)
 
     def go_crazy(self, seconds):
+        self.wake_up()
         start = time.time()
         try:
             while time.time() - start < seconds:
