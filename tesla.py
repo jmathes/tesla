@@ -69,7 +69,6 @@ class Account(urllib2.BaseHandler):
 
     def _cmd(self, cmd, data=None):
         url = PREFIX + cmd
-        print url
         for i in xrange(10):
             try:
                 if data is not None:
