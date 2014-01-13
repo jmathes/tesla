@@ -202,7 +202,7 @@ class Car(object):
             car_data_list = self._account._json('vehicles')
             for data in car_data_list:
                 if data['vin'] == self.vin and data['id'] == self.id:
-                    self.car_state['general']['state'] = data['state']
+                    self.car_state['general']['last']['state'] = data['state']
                     break
         return self.car_state['general']['last']['state'] == 'asleep'
 
