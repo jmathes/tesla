@@ -203,6 +203,7 @@ class Car(object):
             for data in car_data_list:
                 if data['vin'] == self.vin and data['id'] == self.id:
                     self.car_state['general']['last']['state'] = data['state']
+                    self._last_awake_update = time.time()
                     break
         return self.car_state['general']['last']['state'] == 'asleep'
 
