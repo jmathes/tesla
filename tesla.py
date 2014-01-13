@@ -27,6 +27,9 @@ def my_car(email=None, password=None):
 class CommandFailure(RuntimeError):
     pass
 
+class ShhhError(RuntimeError):
+    pass
+
 class Account(urllib2.BaseHandler):
     def __init__(self, email, password):
         self._email = email
@@ -93,7 +96,7 @@ class Car(object):
     def __init__(self, account, data):
         self._account = account
         data[u'option_codes'] = data[u'option_codes'].split(u',')
-        self.state = data
+        self.general = data
         self.id = data['id']
         self.vin = data['vin']
         self._attr_metadata = {}
@@ -107,20 +110,15 @@ class Car(object):
         self._attr_metadata['mobile_enabled']['extractor'] = (lambda x: x['result'])
 
     def diagnostic(self, refresh=True):
-        if refresh:
-            car_data_list = self._account._json('vehicles')
-            for data in car_data_list:
-                if data['vin'] == self.vin and data['id'] == self.id:
-                    data[u'option_codes'] = data[u'option_codes'].split(u',')
-                    self.state.update(data)
-                    break
         diagnostic = {}
-        diagnostic.update({'basic_state': self.state})
-        for query in self.AVAILABLE_QUERIES:
-            if refresh:
-                self.refresh(query)
-            diagnostic[query] = self.__getattribute__(query)
-        return diagnostic
+        try:
+            for query in self.AVAILABLE_QUERIES:
+                if refresh:
+                    self.refresh(query)
+                diagnostic[query] = self.__getattribute__(query)
+            return diagnostic
+        except ShhhError:
+            return self.general
 
     def refresh(self, query):
         assert query in self.AVAILABLE_QUERIES
@@ -128,6 +126,11 @@ class Car(object):
 
     def __repr__(self):
         return "<%s.%s %s (vin %s)>" % (self.__module__, self.__class__.__name__, self.id, self.vin)
+
+    def _communicate(self, url):
+        if self.asleep:
+            raise ShhhError("Not safe to run %s; care is asleep. call wake_up() if you're sure" % url)
+        return self._account._json(url)
 
     def __getattribute__(self, attr):
         if (False
@@ -137,18 +140,10 @@ class Car(object):
         now = time.time()
         metadata = self._attr_metadata[attr]
         if now - metadata['last_update'] > metadata['expiry']:
-            cmd = "vehicles/%s/" % self.id
-            if attr == 'mobile_enabled':
-                cmd += attr
-                try:
-                    self.__dict__[attr] = metadata['extractor'](self._account._json(cmd))
-                except urllib2.HTTPError:
-                    self.__dict__[attr] = False
-            else:
-                if not self.mobile_enabled:
-                    return "offline"
-                cmd += "command/" + attr
-                self.__dict__[attr] = metadata['extractor'](self._account._json(cmd))
+            path = "vehicles/%s/" % self.id
+            if attr != 'mobile_enabled':
+                path += "command/"
+            self.__dict__[attr] = metadata['extractor'](self._cmd(path + attr))
             if attr == 'climate_state' and self.gui_settings['gui_temperature_units'] == 'F':
                 self.__dict__[attr][u'driver_temp_setting'] = C2F(self.__dict__[attr][u'driver_temp_setting'])
                 self.__dict__[attr][u'passenger_temp_setting'] = C2F(self.__dict__[attr][u'passenger_temp_setting'])
@@ -163,9 +158,29 @@ class Car(object):
         url = "/vehicles/%s/command/%s" % (self.id, cmd)
         if kwargs:
             url += "?" + urllib.urlencode(kwargs)
-        result = self._account._json(url)
+        result = self._communicate(url)
         if not result['result']:
             raise CommandFailure(result['reason'])
+
+    @property
+    def asleep(self):
+        car_data_list = self._account._json('vehicles')
+        for data in car_data_list:
+            if data['vin'] == self.vin and data['id'] == self.id:
+                self.general['state'] = data['state']
+                break
+        return self.general['state'] == 'asleep'
+
+    def wake_up(self):
+        start = time.time()
+        while True:
+            try:
+                self._account._json("/vehicles/%s/mobile_enabled" % self.id)
+                break
+            except urllib2.HTTPError, e:
+                if time.time() - start > 300:
+                    raise
+                time.sleep(1)
 
     def charge_port_door_open(self):
         return self._cmd('charge_port_door_open')
@@ -217,21 +232,24 @@ class Car(object):
 
     def go_crazy(self, seconds):
         start = time.time()
-        while time.time() - start < seconds:
-            which = random.choice([
-                self.flash_lights,
-                self.honk_horn,
-                self.door_unlock,
-                self.door_lock,
-                self.sun_roof_control,
-                ])
-            args = []
-            if which == self.sun_roof_control:
-                args = [random.choice(['open', 'close', 'comfort', 'vent'])]
-            which(*args)
-        self.reset_state()
+        try:
+            while time.time() - start < seconds:
+                which = random.choice([
+                    self.flash_lights,
+                    self.honk_horn,
+                    self.door_unlock,
+                    self.door_lock,
+                    self.sun_roof_control,
+                    ])
+                args = []
+                if which == self.sun_roof_control:
+                    args = [random.choice(['open', 'close', 'comfort', 'vent'])]
+                which(*args)
+        except KeyboardInterrupt:
+            pass
+        self.repose()
 
-    def reset_state(self):
+    def repose(self):
         self.door_lock()
         self.sun_roof_control('close')
         self.flash_lights()

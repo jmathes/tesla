@@ -8,11 +8,19 @@ Examples:
 ----
 
 import tesla
+
+#### connect to a car
 account = tesla.Account(<email>, <password>)  # will read from environment if absent:
                                               # TESLA_EMAIL and TESLA_PASSWORD
                                               # (recommended for password)
 cars = account.vehicles()
 car = cars[0]
+
+#### OR
+
+car = tesla.my_car()  # only works when environment variabls are set
+
+#### do stuff!
 
 print car.mobile_enabled
 print car.flash_lights()
