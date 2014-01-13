@@ -66,11 +66,17 @@ class Account(urllib2.BaseHandler):
 
     def _cmd(self, cmd, data=None):
         url = PREFIX + cmd
-        if data is not None:
-            response = self._opener.open(PREFIX + cmd, urllib.urlencode(data))
-        else:
-            response = self._opener.open(PREFIX + cmd)
-        return response
+        for i in xrange(10):
+            try:
+                if data is not None:
+                    response = self._opener.open(url, urllib.urlencode(data))
+                else:
+                    response = self._opener.open(url)
+                return response
+            except urllib2.HTTPError, e:
+                time.sleep(0.5)
+        print url
+        raise e
 
     def _json(self, cmd, data=None):
         error = None
@@ -104,10 +110,8 @@ class Car(object):
             self._attr_metadata[query] = {
                 'last_update': 0,
                 'expiry': 30,
-                'extractor': (lambda x: x),
             }
             self.__dict__[query] = None
-        self._attr_metadata['mobile_enabled']['extractor'] = (lambda x: x['result'])
 
     def diagnostic(self, refresh=True):
         diagnostic = {}
@@ -143,7 +147,7 @@ class Car(object):
             path = "vehicles/%s/" % self.id
             if attr != 'mobile_enabled':
                 path += "command/"
-            self.__dict__[attr] = metadata['extractor'](self._cmd(path + attr))
+            self.__dict__[attr] = self._json(path + attr)
             if attr == 'climate_state' and self.gui_settings['gui_temperature_units'] == 'F':
                 self.__dict__[attr][u'driver_temp_setting'] = C2F(self.__dict__[attr][u'driver_temp_setting'])
                 self.__dict__[attr][u'passenger_temp_setting'] = C2F(self.__dict__[attr][u'passenger_temp_setting'])
@@ -154,13 +158,22 @@ class Car(object):
         self.refresh('drive_state')
         return (self.drive_state['longitude'], self.drive_state['latitude'])
 
-    def _cmd(self, cmd, **kwargs):
-        url = "/vehicles/%s/command/%s" % (self.id, cmd)
+    def _json(self, url, **kwargs):
         if kwargs:
             url += "?" + urllib.urlencode(kwargs)
         result = self._communicate(url)
-        if not result['result']:
-            raise CommandFailure(result['reason'])
+        return result
+
+    def _cmd(self, cmd, **kwargs):
+        url = "/vehicles/%s/command/%s" % (self.id, cmd)
+        return self._json(cmd, **kwargs)
+        # if kwargs:
+        #     url += "?" + urllib.urlencode(kwargs)
+        # result = self._communicate(url)
+        # if not result['result']:
+        #     raise CommandFailure(result['reason'])
+
+
 
     @property
     def asleep(self):
