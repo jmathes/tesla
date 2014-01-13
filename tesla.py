@@ -185,7 +185,7 @@ class Car(object):
         return result
 
     def _cmd(self, cmd, **kwargs):
-        logging.info("_cmd: %s", cmd)
+        logging.info("_cmd: %s (%s)", cmd, ", ".join(["%s=%s" % (k, v) for k, v in kwargs.iteritems()]))
         url = "/vehicles/%s/command/%s" % (self.id, cmd)
         return self._json(url, **kwargs)
 
