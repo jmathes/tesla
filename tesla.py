@@ -69,6 +69,7 @@ class Account(urllib2.BaseHandler):
 
     def _cmd(self, cmd, data=None):
         url = PREFIX + cmd
+        print url
         for i in xrange(10):
             try:
                 if data is not None:
@@ -187,7 +188,7 @@ class Car(object):
     def _cmd(self, cmd, **kwargs):
         logging.info("_cmd: %s", cmd)
         url = "/vehicles/%s/command/%s" % (self.id, cmd)
-        return self._json(cmd, **kwargs)
+        return self._json(url, **kwargs)
 
     @property
     def awake(self):
