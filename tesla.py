@@ -3,7 +3,10 @@ import urllib2
 import json
 import time
 import random
+import logging
 from os import environ
+
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
 
 PREFIX = "https://portal.vn.teslamotors.com/"
 
@@ -135,7 +138,6 @@ class Car(object):
         self._last_awake_update = time.time()
 
     def run_query(self, query):
-        print query
         state = self.car_state[query]
         if time.time() - state['timestamp'] < state['expiry'] and self.awake:
             url = "/vehicles/%s/" % self.id
@@ -183,6 +185,7 @@ class Car(object):
         return result
 
     def _cmd(self, cmd, **kwargs):
+        logging.info("_cmd: %s", cmd)
         url = "/vehicles/%s/command/%s" % (self.id, cmd)
         return self._json(cmd, **kwargs)
 
