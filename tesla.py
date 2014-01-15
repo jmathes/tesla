@@ -71,6 +71,7 @@ class Account(urllib2.BaseHandler):
         url = PREFIX + cmd
         for i in xrange(10):
             try:
+                print url
                 if data is not None:
                     response = self._opener.open(url, urllib.urlencode(data))
                 else:
