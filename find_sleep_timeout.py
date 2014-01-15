@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import tesla
 import time
 from os import environ
