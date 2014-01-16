@@ -136,21 +136,6 @@ class Car(object):
                 'expiry' : 20,
             },
         }
-        self._last_awake_update = time.time()
-
-    def run_query(self, query):
-        state = self.car_state[query]
-        if time.time() - state['timestamp'] < state['expiry'] and self.awake:
-            url = "/vehicles/%s/" % self.id
-            url += "command/" if query != "mobile_enabled" else ""
-            url += query
-            state['last'] = self._json(url)
-            state['timestamp'] = time.time()
-        return state['last']
-
-    def refresh(self, query):
-        assert query in self.AVAILABLE_QUERIES
-        self._attr_metadata['last_update'] = 0
 
     def __repr__(self):
         return "<%s.%s %s (vin %s)>" % (self.__module__, self.__class__.__name__, self.id, self.vin)
@@ -164,16 +149,20 @@ class Car(object):
         if (False
                 or attr == 'car_state'
                 or attr not in self.car_state
-                or not self.car_state[attr]['expiry']):
+                ):
             return super(Car, self).__getattribute__(attr)
         now = time.time()
         state = self.car_state[attr]
-        if time.time() - state['timestamp'] > state['expiry']:
-            url = "/vehicles/%s/" % self.id
-            url += "command/" if attr != "mobile_enabled" else ""
-            url += attr
-            state['last'] = self._json(url)
-            state['timestamp'] = time.time()
+        if state['expiry'] and time.time() - state['timestamp'] > state['expiry']:
+            result = None
+            if attr == 'general':
+                self._refresh_general()
+            else:
+                url = "vehicles/%s/" % self.id
+                url += "command/" if attr != "mobile_enabled" else ""
+                url += attr
+                state['last'] = self._json(url)
+                state['timestamp'] = time.time()
         return state['last']
 
     def locate(self):
@@ -187,32 +176,35 @@ class Car(object):
 
     def _cmd(self, cmd, **kwargs):
         logging.info("_cmd: %s (%s)", cmd, ", ".join(["%s=%s" % (k, v) for k, v in kwargs.iteritems()]))
-        url = "/vehicles/%s/command/%s" % (self.id, cmd)
+        url = "vehicles/%s/command/%s" % (self.id, cmd)
         return self._json(url, **kwargs)
 
     @property
     def awake(self):
         return not self.asleep
 
+    def _refresh_general(self):
+        car_data_list = self._account._json('vehicles')
+        for data in car_data_list:
+            if data['vin'] == self.vin and data['id'] == self.id:
+                self.car_state['general']['last'] = data
+                self.car_state['general']['timestamp'] = time.time()
+                break
+
     @property
     def asleep(self):
         expiry = 1
         if self.car_state['general']['last']['state'] == 'asleep':
             expiry = 10
-        if time.time() - self._last_awake_update > expiry:
-            car_data_list = self._account._json('vehicles')
-            for data in car_data_list:
-                if data['vin'] == self.vin and data['id'] == self.id:
-                    self.car_state['general']['last']['state'] = data['state']
-                    self._last_awake_update = time.time()
-                    break
+        if time.time() - self.car_state['general']['timestamp'] > expiry:
+            self._refresh_general()
         return self.car_state['general']['last']['state'] == 'asleep'
 
     def wake_up(self):
         start = time.time()
         while True:
             try:
-                self._account._json("/vehicles/%s/mobile_enabled" % self.id)
+                self._account._json("vehicles/%s/mobile_enabled" % self.id)
                 break
             except urllib2.HTTPError, e:
                 if time.time() - start > 300:
