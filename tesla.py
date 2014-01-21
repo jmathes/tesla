@@ -163,6 +163,12 @@ class Car(object):
                 url += attr
                 state['last'] = self._json(url)
                 state['timestamp'] = time.time()
+                if attr == 'climate_state' and self.gui_settings['gui_temperature_units'] == 'F':
+                    state['last']['inside_temp'] = C2F(state['last']['inside_temp'])
+                    state['last']['outside_temp'] = C2F(state['last']['outside_temp'])
+                    state['last']['driver_temp_setting'] = C2F(state['last']['driver_temp_setting'])
+                    state['last']['passenger_temp_setting'] = C2F(state['last']['passenger_temp_setting'])
+
         return state['last']
 
     def locate(self):
