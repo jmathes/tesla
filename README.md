@@ -7,6 +7,7 @@ Examples:
 
 ----
 
+```py
 import tesla
 
 #### connect to a car
@@ -64,6 +65,7 @@ car.sun_roof_control(state) # 'open', 'comfort', 'vent', or 'close'
 
 car.go_crazy(seconds)  # randomly run lights, horn, doors, and sun roof
 car.reset_state() # turn off lights, lock doors, set to room temperature, turn off AC
+```
 
 ----
 
